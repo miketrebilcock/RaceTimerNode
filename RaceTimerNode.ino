@@ -36,8 +36,69 @@ const char* host = "Google Sheets";
 
 const char* sheet = "start";
 
+// Gscript ID and required credentials
+const char *GScriptId = "AKfycbxld-KFQvmj7Egth3S8yhKdvkRtMnybpv_fHeEU89PHuRzs6Tai5zu_GkNuxVxPgxKd";    // change Gscript ID
+const int httpsPort =  443;
+const char* host = "script.google.com";
+const char* googleRedirHost = "script.googleusercontent.com";
+String url = String("/macros/s/") + GScriptId + "/exec?";
+HTTPSRedirect client(httpsPort);
+
 void ARDUINO_ISR_ATTR isr() {
     laserDetector.detected = true;
+}
+
+void startWifi()
+{
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    LEDRed();
+    smartDelay(500);
+    LEDOff();
+    smartDelay(500);
+    Serial.print(".");
+    if (millis() > 15000 && WiFi.status() != WL_CONNECTED) {
+      Serial.println("");
+      Serial.println(F("Could not connect to Wifi"));
+      blockingFault();
+    }
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+ 
+  Serial.print(String("Connecting to "));
+  Serial.println(host);
+
+  bool WiFiFlag = false;
+  for (int i=0; i<5; i++){
+    int retval = client.connect(host, httpsPort);
+    if (retval == 1) {
+       WiFiFlag = true;
+       break;
+    }
+    else
+      Serial.println("Connection failed. Retrying...");
+  }
+
+  // Connection Status, 1 = Connected, 0 is not.
+  Serial.println("Connection Status: " + String(client.connected()));
+  Serial.flush();
+  
+  if (!WiFiFlag){
+    Serial.print("Could not connect to server: ");
+    Serial.println(host);
+    Serial.println("Exiting...");
+    Serial.flush();
+    return;
+  }
 }
 
 void setup()
@@ -65,29 +126,7 @@ void setup()
     }
   }
 
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    LEDRed();
-    smartDelay(500);
-    LEDOff();
-    smartDelay(500);
-    Serial.print(".");
-    if (millis() > 15000 && WiFi.status() != WL_CONNECTED) {
-      Serial.println("");
-      Serial.println(F("Could not connect to Wifi"));
-      blockingFault();
-    }
-  }
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  startWifi();
     
   attachInterrupt(laserDetector.PIN, isr, RISING);
   updateTime();
@@ -102,6 +141,7 @@ void loop()
     LEDWhite();
 
     sendDetection();
+    smartDelay(500);
     laserDetector.detected = false;
   }
   smartDelay(1);
@@ -127,46 +167,16 @@ void sendDetection()
   Serial.print(secondNow);
   Serial.print(":");
   Serial.println(millis() - lastMillis);
-  // Use WiFiClient class to create TCP connections
-//  WiFiClient client;
-//  const int httpPort = 80;
-//  if (!client.connect(host, httpPort)) {
-//      Serial.println("connection failed");
-//      return;
-//  }
 
-//  // We now create a URI for the request
-//  String url = "/input/";
-//  url += streamId;
-//  url += "?private_key=";
-//  url += privateKey;
-//  url += "&value=";
-//  url += value;
-//
-//  Serial.print("Requesting URL: ");
-//  Serial.println(url);
-//
-//  // This will send the request to the server
-//  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-//               "Host: " + host + "\r\n" +
-//               "Connection: close\r\n\r\n");
-//  unsigned long timeout = millis();
-//  while (client.available() == 0) {
-//      if (millis() - timeout > 5000) {
-//          Serial.println(">>> Client Timeout !");
-//          client.stop();
-//          return;
-//      }
-//  }
-//
-//  // Read all the lines of the reply from server and print them to Serial
-//  while(client.available()) {
-//      String line = client.readStringUntil('\r');
-//      Serial.print(line);
-//  }
+  if (!client.connected()){
+    Serial.println("Connecting to client again..."); 
+    client.connect(host, httpsPort);
+  }
+  String urlFinal = url + "tag=" + tag + "&value=" + String(value);
+  client.printRedir(urlFinal, host, googleRedirHost);
 
   Serial.println();
-  Serial.println("closing connection");
+  Serial.println("data sent");
 }
 
 // This custom version of delay() ensures that the gps object
