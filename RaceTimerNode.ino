@@ -6,6 +6,7 @@
 struct Button {
     const uint8_t PIN;
     bool detected;
+    unsigned long detectedAt;
 };
 
 
@@ -46,6 +47,7 @@ HTTPSRedirect client(httpsPort);
 
 void ARDUINO_ISR_ATTR isr() {
     laserDetector.detected = true;
+    laserDetector.detectedAt = millis();
 }
 
 void startWifi()
@@ -143,6 +145,7 @@ void loop()
     sendDetection();
     smartDelay(500);
     laserDetector.detected = false;
+    laserDetector.detectedAt = 0;
   }
   smartDelay(1);
 }
@@ -166,13 +169,19 @@ void sendDetection()
   Serial.print(":");
   Serial.print(secondNow);
   Serial.print(":");
-  Serial.println(millis() - lastMillis);
+  Serial.println(laserDetector.detectedAt - lastMillis);
 
   if (!client.connected()){
     Serial.println("Connecting to client again..."); 
     client.connect(host, httpsPort);
   }
-  String urlFinal = url + "tag=" + tag + "&value=" + String(value);
+  String urlFinal = url + "tag=" + tag + "&year=" + String(yearNow);
+  urlFinal += "&month=" + String(monthNow);
+  urlFinal += "&date=" + String(dayNow);
+  urlFinal += "&hours=" + String(hourNow);
+  urlFinal += "&minutes=" + String(minuteNow);
+  urlFinal += "&seconds=" + String(secondNow);
+  urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
   client.printRedir(urlFinal, host, googleRedirHost);
 
   Serial.println();
