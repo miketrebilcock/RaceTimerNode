@@ -35,7 +35,7 @@ const char* ssid     = "4 The Grove";
 const char* password = "trebilcock";
 const char* host = "Google Sheets";
 
-const char* sheet = "start";
+const char* sheet = "StartData";
 
 // Gscript ID and required credentials
 const char *GScriptId = "AKfycbwTftthY7XpBuDkBwgv_A49HahBlJgsGIk_GGKaug3dnWjZYpXrOk0FSieGG1lo8865";    // change Gscript ID
@@ -175,7 +175,7 @@ void sendDetection()
     Serial.println("Connecting to client again..."); 
     client.connect(host, httpsPort);
   }
-  String urlFinal = url + "tag=" + tag + "&year=" + String(yearNow);
+  String urlFinal = url + "tag=" + sheet + "&year=" + String(yearNow);
   urlFinal += "&month=" + String(monthNow);
   urlFinal += "&date=" + String(dayNow);
   urlFinal += "&hours=" + String(hourNow);
