@@ -9,7 +9,7 @@ struct Button {
 };
 
 
-Button laserDetector = {4, 0, false};
+Button laserDetector = {16, false};
 
 int secondNow = 0;
 int hourNow = 0;
@@ -21,7 +21,7 @@ int yearNow = 0;
 unsigned long lastMillis = 0;
 
 // 9600-baud serial GPS device hooked up on pins 4(rx) and 3(tx).
-static const int RXPin = 13, TXPin = 3, StatusLEDRedPin = 6, StatusLEDGreenPin = 7, StatusLEDBluePin = 8;
+static const int RXPin = 13, TXPin = 12, StatusLEDRedPin = 15, StatusLEDGreenPin = 13, StatusLEDBluePin = 2;
 static const uint32_t GPSBaud = 9600;
 
 // The TinyGPSPlus object
@@ -37,12 +37,12 @@ const char* host = "Google Sheets";
 const char* sheet = "start";
 
 void ARDUINO_ISR_ATTR isr() {
-    button2.detected = true;
+    laserDetector.detected = true;
 }
 
 void setup()
 {
-  pinMode(LASERPin, INPUT_PULLUP);
+  pinMode(laserDetector.PIN, INPUT);
   pinMode(StatusLEDRedPin, OUTPUT);
   pinMode(StatusLEDGreenPin, OUTPUT);
   pinMode(StatusLEDBluePin, OUTPUT);
@@ -89,7 +89,7 @@ void setup()
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
     
-  attachInterrupt(button1.PIN, isr, FALLING);
+  attachInterrupt(laserDetector.PIN, isr, RISING);
   updateTime();
 }
 
@@ -100,9 +100,11 @@ void loop()
   if (laserDetector.detected)
   {
     LEDWhite();
+
+    sendDetection();
     laserDetector.detected = false;
   }
-  smartDelay(50);
+  smartDelay(1);
 }
 
 void sendDetection()
@@ -120,11 +122,11 @@ void sendDetection()
   Serial.print(" ");
   Serial.print(hourNow);
   Serial.print(":");
-  Serial.print(minNow);
+  Serial.print(minuteNow);
   Serial.print(":");
   Serial.print(secondNow);
   Serial.print(":");
-  Serial.println(Millis() - lastMillis);
+  Serial.println(millis() - lastMillis);
   // Use WiFiClient class to create TCP connections
 //  WiFiClient client;
 //  const int httpPort = 80;
@@ -196,9 +198,9 @@ void updateTime() {
 void blockingFault() {
   while (1) {
     LEDRed();
-    delay(100);
+    delay(500);
     LEDOff();
-    delay(100);
+    delay(500);
   }
 }
 
