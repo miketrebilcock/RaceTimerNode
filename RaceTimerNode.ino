@@ -37,7 +37,7 @@ const char* host = "Google Sheets";
 const char* sheet = "start";
 
 // Gscript ID and required credentials
-const char *GScriptId = "AKfycbxld-KFQvmj7Egth3S8yhKdvkRtMnybpv_fHeEU89PHuRzs6Tai5zu_GkNuxVxPgxKd";    // change Gscript ID
+const char *GScriptId = "AKfycbwTftthY7XpBuDkBwgv_A49HahBlJgsGIk_GGKaug3dnWjZYpXrOk0FSieGG1lo8865";    // change Gscript ID
 const int httpsPort =  443;
 const char* host = "script.google.com";
 const char* googleRedirHost = "script.googleusercontent.com";
