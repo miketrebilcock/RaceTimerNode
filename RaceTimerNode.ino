@@ -4,12 +4,12 @@
 #include <WiFi.h>
 #include <HTTPSRedirect.h>
 
-struct Button {
-    const uint8_t PIN;
-    bool detected;
-    unsigned long detectedAt;
+struct Button
+{
+  const uint8_t PIN;
+  bool detected;
+  unsigned long detectedAt;
 };
-
 
 Button laserDetector = {16, false};
 
@@ -32,22 +32,23 @@ TinyGPSPlus gps;
 // The serial connection to the GPS device
 SoftwareSerial ss(RXPin, TXPin);
 
-const char* ssid     = "4 The Grove";
-const char* password = "trebilcock";
+const char *ssid = "4 The Grove";
+const char *password = "trebilcock";
 
-const char* sheet = "StartData";
+const char *sheet = "StartData";
 
 // Gscript ID and required credentials
-const char *GScriptId = "AKfycbwTftthY7XpBuDkBwgv_A49HahBlJgsGIk_GGKaug3dnWjZYpXrOk0FSieGG1lo8865";    // change Gscript ID
-const int httpsPort =  443;
-const char* host = "script.google.com";
-// const char* googleRedirHost = "script.googleusercontent.com";
+const char *GScriptId = "AKfycbwTftthY7XpBuDkBwgv_A49HahBlJgsGIk_GGKaug3dnWjZYpXrOk0FSieGG1lo8865"; // change Gscript ID
+const int httpsPort = 443;
+const char *host = "script.google.com";
 String url = String("/macros/s/") + GScriptId + "/exec?";
-HTTPSRedirect* client = nullptr;
 
-void ARDUINO_ISR_ATTR isr() {
-    laserDetector.detected = true;
-    laserDetector.detectedAt = millis();
+HTTPSRedirect *client = nullptr;
+
+void ARDUINO_ISR_ATTR isr()
+{
+  laserDetector.detected = true;
+  laserDetector.detectedAt = millis();
 }
 
 void startWifi()
@@ -55,20 +56,22 @@ void startWifi()
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
-  
-  // flush() is needed to print the above (connecting...) message reliably, 
+
+  // flush() is needed to print the above (connecting...) message reliably,
   // in case the wireless connection doesn't go through
   Serial.flush();
-  
+
   WiFi.begin(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     LEDRed();
     smartDelay(500);
     LEDOff();
     smartDelay(500);
     Serial.print(".");
-    if (millis() > 15000 && WiFi.status() != WL_CONNECTED) {
+    if (millis() > 15000 && WiFi.status() != WL_CONNECTED)
+    {
       Serial.println("");
       Serial.println(F("Could not connect to Wifi"));
       blockingFault();
@@ -79,22 +82,24 @@ void startWifi()
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
- 
+
   Serial.print(String("Connecting to "));
   Serial.println(host);
 
-   // Use HTTPSRedirect class to create a new TLS connection
+  // Use HTTPSRedirect class to create a new TLS connection
   client = new HTTPSRedirect(httpsPort);
   client->setInsecure();
-  //client->setPrintResponseBody(true);
+  // client->setPrintResponseBody(true);
   client->setContentTypeHeader("text/plain");
 
   bool WiFiFlag = false;
-  for (int i=0; i<5; i++){
+  for (int i = 0; i < 5; i++)
+  {
     int retval = client->connect(host, httpsPort);
-    if (retval == 1) {
-       WiFiFlag = true;
-       break;
+    if (retval == 1)
+    {
+      WiFiFlag = true;
+      break;
     }
     else
       Serial.println("Connection failed. Retrying...");
@@ -103,14 +108,19 @@ void startWifi()
   // Connection Status, 1 = Connected, 0 is not.
   Serial.println("Connection Status: " + String(client->connected()));
   Serial.flush();
-  
-  if (!WiFiFlag){
+
+  if (!WiFiFlag)
+  {
     Serial.print("Could not connect to server: ");
     Serial.println(host);
     Serial.println("Exiting...");
     Serial.flush();
-    return;
+    blockingFault();
   }
+
+  // delete HTTPSRedirect object
+  delete client;
+  client = nullptr;
 }
 
 void setup()
@@ -125,13 +135,15 @@ void setup()
   Serial.println("Connecting to GPS");
   smartDelay(6000);
 
-  while (!gps.date.isValid() or !gps.time.isValid()) {
+  while (!gps.date.isValid() or !gps.time.isValid())
+  {
     LEDBlue();
     smartDelay(500);
     LEDOff();
     smartDelay(500);
     Serial.print(".");
-    if (millis() > 5000 && gps.charsProcessed() < 10) {
+    if (millis() > 5000 && gps.charsProcessed() < 10)
+    {
       Serial.println("");
       Serial.println(F("No GPS data received: check wiring"));
       blockingFault();
@@ -139,7 +151,7 @@ void setup()
   }
 
   startWifi();
-    
+
   attachInterrupt(laserDetector.PIN, isr, RISING);
   updateTime();
 }
@@ -162,6 +174,11 @@ void loop()
 
 void sendDetection()
 {
+  static int error_count = 0;
+  static int connect_count = 0;
+  const unsigned int MAX_CONNECT = 20;
+  static bool flag = false;
+
   Serial.print("connecting to ");
   Serial.println(host);
 
@@ -180,13 +197,37 @@ void sendDetection()
   Serial.print(secondNow);
   Serial.print(":");
   Serial.println(laserDetector.detectedAt - lastMillis);
+  if (!flag)
+  {
+    client = new HTTPSRedirect(httpsPort);
+    client->setInsecure();
+    flag = true;
+    client->setPrintResponseBody(true);
+  }
 
-  if (client != nullptr){
-    if (!client->connected()){
-      Serial.println("Connecting to client again..."); 
+  if (client != nullptr)
+  {
+    if (!client->connected())
+    {
+      Serial.println("Connecting to client again...");
       client->connect(host, httpsPort);
     }
   }
+  else
+  {
+    Serial.println("Error creating client object!");
+    error_count = 5;
+  }
+
+  if (connect_count > MAX_CONNECT)
+  {
+    // error_count = 5;
+    connect_count = 0;
+    flag = false;
+    delete client;
+    return;
+  }
+
   String urlFinal = url + "tag=" + sheet + "&year=" + String(yearNow);
   urlFinal += "&month=" + String(monthNow);
   urlFinal += "&date=" + String(dayNow);
@@ -195,11 +236,24 @@ void sendDetection()
   urlFinal += "&seconds=" + String(secondNow);
   urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
   Serial.println(urlFinal);
-  client->GET(url, host);
-  //client.printRedir(urlFinal, host, googleRedirHost);
-
-  Serial.println();
-  Serial.println("data sent");
+  if (client->GET(url, host))
+  {
+    Serial.println();
+    Serial.println("data sent");
+  }
+  else
+  {
+    ++error_count;
+    Serial.println("erroing sending data");
+  }
+  // client.printRedir(urlFinal, host, googleRedirHost);
+  if (error_count > 3)
+  {
+    Serial.println("Halting processor...");
+    delete client;
+    client = nullptr;
+    Serial.flush();
+  }
 }
 
 // This custom version of delay() ensures that the gps object
@@ -214,7 +268,8 @@ static void smartDelay(unsigned long ms)
   } while (millis() - start < ms);
 }
 
-void updateTime() {
+void updateTime()
+{
   if (secondNow != gps.time.second())
   {
     hourNow = gps.time.hour();
@@ -228,9 +283,11 @@ void updateTime() {
   }
 }
 
-void blockingFault() {
+void blockingFault()
+{
   Serial.println("Fault");
-  while (1) {
+  while (1)
+  {
     LEDRed();
     delay(500);
     LEDOff();
@@ -238,31 +295,36 @@ void blockingFault() {
   }
 }
 
-void LEDBlue() {
+void LEDBlue()
+{
   digitalWrite(StatusLEDRedPin, LOW);
   digitalWrite(StatusLEDGreenPin, LOW);
   digitalWrite(StatusLEDBluePin, HIGH);
 }
 
-void LEDRed() {
+void LEDRed()
+{
   digitalWrite(StatusLEDRedPin, HIGH);
   digitalWrite(StatusLEDGreenPin, LOW);
   digitalWrite(StatusLEDBluePin, LOW);
 }
 
-void LEDGreen() {
+void LEDGreen()
+{
   digitalWrite(StatusLEDRedPin, LOW);
   digitalWrite(StatusLEDGreenPin, HIGH);
   digitalWrite(StatusLEDBluePin, LOW);
 }
 
-void LEDWhite() {
+void LEDWhite()
+{
   digitalWrite(StatusLEDRedPin, HIGH);
   digitalWrite(StatusLEDGreenPin, HIGH);
   digitalWrite(StatusLEDBluePin, HIGH);
 }
 
-void LEDOff() {
+void LEDOff()
+{
   digitalWrite(StatusLEDRedPin, LOW);
   digitalWrite(StatusLEDGreenPin, LOW);
   digitalWrite(StatusLEDBluePin, LOW);
