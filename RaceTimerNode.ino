@@ -86,8 +86,8 @@ void startWifi()
    // Use HTTPSRedirect class to create a new TLS connection
   client = new HTTPSRedirect(httpsPort);
   client->setInsecure();
-  client->setPrintResponseBody(true);
-  client->setContentTypeHeader("application/json");
+  //client->setPrintResponseBody(true);
+  client->setContentTypeHeader("text/plain");
 
   bool WiFiFlag = false;
   for (int i=0; i<5; i++){
@@ -181,7 +181,7 @@ void sendDetection()
   Serial.print(":");
   Serial.println(laserDetector.detectedAt - lastMillis);
 
-   if (client != nullptr){
+  if (client != nullptr){
     if (!client->connected()){
       Serial.println("Connecting to client again..."); 
       client->connect(host, httpsPort);
@@ -194,6 +194,7 @@ void sendDetection()
   urlFinal += "&minutes=" + String(minuteNow);
   urlFinal += "&seconds=" + String(secondNow);
   urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
+  Serial.println(urlFinal);
   client->GET(url, host);
   //client.printRedir(urlFinal, host, googleRedirHost);
 
@@ -228,6 +229,7 @@ void updateTime() {
 }
 
 void blockingFault() {
+  Serial.println("Fault");
   while (1) {
     LEDRed();
     delay(500);
