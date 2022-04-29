@@ -2,7 +2,7 @@
 #include <SoftwareSerial.h>
 #include <Arduino.h>
 #include <WiFi.h>
-#include <HTTPSRedirect.h>
+#include <HTTPClient.h>
 
 struct Button
 {
@@ -22,7 +22,6 @@ int yearNow = 0;
 
 unsigned long lastMillis = 0;
 
-// 9600-baud serial GPS device hooked up on pins 4(rx) and 3(tx).
 static const int RXPin = 13, TXPin = 12, StatusLEDRedPin = 15, StatusLEDGreenPin = 13, StatusLEDBluePin = 2;
 static const uint32_t GPSBaud = 9600;
 
@@ -39,11 +38,7 @@ const char *sheet = "StartData";
 
 // Gscript ID and required credentials
 const char *GScriptId = "AKfycbwTftthY7XpBuDkBwgv_A49HahBlJgsGIk_GGKaug3dnWjZYpXrOk0FSieGG1lo8865"; // change Gscript ID
-const int httpsPort = 443;
-const char *host = "script.google.com";
-String url = String("/macros/s/") + GScriptId + "/exec?";
-
-HTTPSRedirect *client = nullptr;
+String url = String("https://script.google.com/macros/s/") + GScriptId + "/exec?";
 
 void ARDUINO_ISR_ATTR isr()
 {
@@ -51,76 +46,53 @@ void ARDUINO_ISR_ATTR isr()
   laserDetector.detectedAt = millis();
 }
 
-void startWifi()
+#define WIFI_TIMEOUT_MS 20000      // 20 second WiFi connection timeout
+#define WIFI_RECOVER_TIME_MS 30000 // Wait 30 seconds after a failed connection attempt
+
+/**
+ * Task: monitor the WiFi connection and keep it alive!
+ *
+ * When a WiFi connection is established, this task will check it every 10 seconds
+ * to make sure it's still alive.
+ *
+ * If not, a reconnect is attempted. If this fails to finish within the timeout,
+ * the ESP32 will wait for it to recover and try again.
+ */
+void keepWiFiAlive(void *parameter)
 {
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
-  // flush() is needed to print the above (connecting...) message reliably,
-  // in case the wireless connection doesn't go through
-  Serial.flush();
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED)
+  for (;;)
   {
-    LEDRed();
-    smartDelay(500);
-    LEDOff();
-    smartDelay(500);
-    Serial.print(".");
-    if (millis() > 15000 && WiFi.status() != WL_CONNECTED)
+    if (WiFi.status() == WL_CONNECTED)
     {
-      Serial.println("");
-      Serial.println(F("Could not connect to Wifi"));
-      blockingFault();
+      vTaskDelay(10000 / portTICK_PERIOD_MS);
+      continue;
     }
-  }
 
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+    Serial.println("[WIFI] Connecting");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
 
-  Serial.print(String("Connecting to "));
-  Serial.println(host);
+    unsigned long startAttemptTime = millis();
 
-  // Use HTTPSRedirect class to create a new TLS connection
-  client = new HTTPSRedirect(httpsPort);
-  client->setInsecure();
-  // client->setPrintResponseBody(true);
-  client->setContentTypeHeader("text/plain");
-
-  bool WiFiFlag = false;
-  for (int i = 0; i < 5; i++)
-  {
-    int retval = client->connect(host, httpsPort);
-    if (retval == 1)
+    // Keep looping while we're not connected and haven't reached the timeout
+    while (WiFi.status() != WL_CONNECTED &&
+           millis() - startAttemptTime < WIFI_TIMEOUT_MS)
     {
-      WiFiFlag = true;
-      break;
     }
-    else
-      Serial.println("Connection failed. Retrying...");
+
+    // When we couldn't make a WiFi connection (or the timeout expired)
+    // sleep for a while and then retry.
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      Serial.println("[WIFI] FAILED");
+      LEDRed();
+      vTaskDelay(WIFI_RECOVER_TIME_MS / portTICK_PERIOD_MS);
+      continue;
+    }
+
+    Serial.println("[WIFI] Connected: " + WiFi.localIP());
+    LEDGreen();
   }
-
-  // Connection Status, 1 = Connected, 0 is not.
-  Serial.println("Connection Status: " + String(client->connected()));
-  Serial.flush();
-
-  if (!WiFiFlag)
-  {
-    Serial.print("Could not connect to server: ");
-    Serial.println(host);
-    Serial.println("Exiting...");
-    Serial.flush();
-    blockingFault();
-  }
-
-  // delete HTTPSRedirect object
-  delete client;
-  client = nullptr;
 }
 
 void setup()
@@ -129,8 +101,19 @@ void setup()
   pinMode(StatusLEDRedPin, OUTPUT);
   pinMode(StatusLEDGreenPin, OUTPUT);
   pinMode(StatusLEDBluePin, OUTPUT);
+  pinMode(4, OUTPUT);
 
   Serial.begin(115200);
+
+  xTaskCreatePinnedToCore(
+      keepWiFiAlive,
+      "keepWiFiAlive", // Task name
+      5000,            // Stack size (bytes)
+      NULL,            // Parameter
+      1,               // Task priority
+      NULL,            // Task handle
+      ARDUINO_RUNNING_CORE);
+
   ss.begin(GPSBaud);
   Serial.println("Connecting to GPS");
   smartDelay(6000);
@@ -150,8 +133,6 @@ void setup()
     }
   }
 
-  startWifi();
-
   attachInterrupt(laserDetector.PIN, isr, RISING);
   updateTime();
 }
@@ -162,26 +143,23 @@ void loop()
   updateTime();
   if (laserDetector.detected)
   {
-    LEDWhite();
+    digitalWrite(4, HIGH);
 
     sendDetection();
     smartDelay(500);
     laserDetector.detected = false;
     laserDetector.detectedAt = 0;
+    digitalWrite(4, LOW);
   }
   smartDelay(1);
 }
 
 void sendDetection()
 {
-  static int error_count = 0;
-  static int connect_count = 0;
-  const unsigned int MAX_CONNECT = 20;
-  static bool flag = false;
-
-  Serial.print("connecting to ");
-  Serial.println(host);
-
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    ;
+  }
   Serial.print(sheet);
   Serial.print(" ");
   Serial.print(yearNow);
@@ -197,36 +175,6 @@ void sendDetection()
   Serial.print(secondNow);
   Serial.print(":");
   Serial.println(laserDetector.detectedAt - lastMillis);
-  if (!flag)
-  {
-    client = new HTTPSRedirect(httpsPort);
-    client->setInsecure();
-    flag = true;
-    client->setPrintResponseBody(true);
-  }
-
-  if (client != nullptr)
-  {
-    if (!client->connected())
-    {
-      Serial.println("Connecting to client again...");
-      client->connect(host, httpsPort);
-    }
-  }
-  else
-  {
-    Serial.println("Error creating client object!");
-    error_count = 5;
-  }
-
-  if (connect_count > MAX_CONNECT)
-  {
-    // error_count = 5;
-    connect_count = 0;
-    flag = false;
-    delete client;
-    return;
-  }
 
   String urlFinal = url + "tag=" + sheet + "&year=" + String(yearNow);
   urlFinal += "&month=" + String(monthNow);
@@ -236,24 +184,12 @@ void sendDetection()
   urlFinal += "&seconds=" + String(secondNow);
   urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
   Serial.println(urlFinal);
-  if (client->GET(urlFinal, host))
-  {
-    Serial.println();
-    Serial.println("data sent");
-  }
-  else
-  {
-    ++error_count;
-    Serial.println("erroing sending data");
-  }
-  // client.printRedir(urlFinal, host, googleRedirHost);
-  if (error_count > 3)
-  {
-    Serial.println("Halting processor...");
-    delete client;
-    client = nullptr;
-    Serial.flush();
-  }
+  HTTPClient http;
+  http.begin(urlFinal.c_str());
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  int httpCode = http.GET();
+  Serial.print("HTTP Status Code: ");
+  Serial.println(httpCode);
 }
 
 // This custom version of delay() ensures that the gps object
@@ -270,16 +206,19 @@ static void smartDelay(unsigned long ms)
 
 void updateTime()
 {
-  if (secondNow != gps.time.second())
+  if ((gps.date.isValid() and gps.time.isValid()))
   {
-    hourNow = gps.time.hour();
-    minuteNow = gps.time.minute();
-    secondNow = gps.time.second();
+    if (secondNow != gps.time.second())
+    {
+      hourNow = gps.time.hour();
+      minuteNow = gps.time.minute();
+      secondNow = gps.time.second();
 
-    dayNow = gps.date.day();
-    monthNow = gps.date.month();
-    yearNow = gps.date.year();
-    lastMillis = millis();
+      dayNow = gps.date.day();
+      monthNow = gps.date.month();
+      yearNow = gps.date.year();
+      lastMillis = millis();
+    }
   }
 }
 
