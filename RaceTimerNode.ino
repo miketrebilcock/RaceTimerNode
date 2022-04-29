@@ -41,9 +41,9 @@ const char* sheet = "StartData";
 const char *GScriptId = "AKfycbwTftthY7XpBuDkBwgv_A49HahBlJgsGIk_GGKaug3dnWjZYpXrOk0FSieGG1lo8865";    // change Gscript ID
 const int httpsPort =  443;
 const char* host = "script.google.com";
-const char* googleRedirHost = "script.googleusercontent.com";
+// const char* googleRedirHost = "script.googleusercontent.com";
 String url = String("/macros/s/") + GScriptId + "/exec?";
-HTTPSRedirect client(httpsPort);
+HTTPSRedirect* client = nullptr;
 
 void ARDUINO_ISR_ATTR isr() {
     laserDetector.detected = true;
@@ -55,7 +55,11 @@ void startWifi()
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
-
+  
+  // flush() is needed to print the above (connecting...) message reliably, 
+  // in case the wireless connection doesn't go through
+  Serial.flush();
+  
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -79,9 +83,15 @@ void startWifi()
   Serial.print(String("Connecting to "));
   Serial.println(host);
 
+   // Use HTTPSRedirect class to create a new TLS connection
+  client = new HTTPSRedirect(httpsPort);
+  client->setInsecure();
+  client->setPrintResponseBody(true);
+  client->setContentTypeHeader("application/json");
+
   bool WiFiFlag = false;
   for (int i=0; i<5; i++){
-    int retval = client.connect(host, httpsPort);
+    int retval = client->connect(host, httpsPort);
     if (retval == 1) {
        WiFiFlag = true;
        break;
@@ -91,7 +101,7 @@ void startWifi()
   }
 
   // Connection Status, 1 = Connected, 0 is not.
-  Serial.println("Connection Status: " + String(client.connected()));
+  Serial.println("Connection Status: " + String(client->connected()));
   Serial.flush();
   
   if (!WiFiFlag){
@@ -171,9 +181,11 @@ void sendDetection()
   Serial.print(":");
   Serial.println(laserDetector.detectedAt - lastMillis);
 
-  if (!client.connected()){
-    Serial.println("Connecting to client again..."); 
-    client.connect(host, httpsPort);
+   if (client != nullptr){
+    if (!client->connected()){
+      Serial.println("Connecting to client again..."); 
+      client->connect(host, httpsPort);
+    }
   }
   String urlFinal = url + "tag=" + sheet + "&year=" + String(yearNow);
   urlFinal += "&month=" + String(monthNow);
@@ -182,7 +194,8 @@ void sendDetection()
   urlFinal += "&minutes=" + String(minuteNow);
   urlFinal += "&seconds=" + String(secondNow);
   urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
-  client.printRedir(urlFinal, host, googleRedirHost);
+  client->GET(url, host);
+  //client.printRedir(urlFinal, host, googleRedirHost);
 
   Serial.println();
   Serial.println("data sent");
