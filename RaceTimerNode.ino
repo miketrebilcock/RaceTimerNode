@@ -195,7 +195,7 @@ void sendDetection()
   urlFinal += "&seconds=" + String(secondNow);
   urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
   Serial.println(urlFinal);
-  client->GET(url, host);
+  client->GET(urlFinal, host);
   //client.printRedir(urlFinal, host, googleRedirHost);
 
   Serial.println();
