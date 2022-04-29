@@ -2,6 +2,7 @@
 #include <SoftwareSerial.h>
 #include <Arduino.h>
 #include <WiFi.h>
+#include <HTTPSRedirect.h>
 
 struct Button {
     const uint8_t PIN;
@@ -33,7 +34,6 @@ SoftwareSerial ss(RXPin, TXPin);
 
 const char* ssid     = "4 The Grove";
 const char* password = "trebilcock";
-const char* host = "Google Sheets";
 
 const char* sheet = "StartData";
 
