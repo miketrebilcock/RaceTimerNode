@@ -11,7 +11,7 @@ struct Button
   unsigned long detectedAt;
 };
 
-Button laserDetector = {16, false};
+Button laserDetector = {16, false, 0};
 
 int secondNow = 0;
 int hourNow = 0;
@@ -42,8 +42,10 @@ String url = String("https://script.google.com/macros/s/") + GScriptId + "/exec?
 
 void ARDUINO_ISR_ATTR isr()
 {
-  laserDetector.detected = true;
-  laserDetector.detectedAt = millis();
+  if(!laserDetector.detected) {
+    laserDetector.detected = true;
+    laserDetector.detectedAt = millis();
+  }
 }
 
 #define WIFI_TIMEOUT_MS 20000      // 20 second WiFi connection timeout
@@ -146,10 +148,6 @@ void loop()
     digitalWrite(4, HIGH);
 
     sendDetection();
-    smartDelay(500);
-    laserDetector.detected = false;
-    laserDetector.detectedAt = 0;
-    digitalWrite(4, LOW);
   }
   smartDelay(1);
 }
@@ -183,6 +181,11 @@ void sendDetection()
   urlFinal += "&minutes=" + String(minuteNow);
   urlFinal += "&seconds=" + String(secondNow);
   urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
+  
+  laserDetector.detected = false;
+  laserDetector.detectedAt = 0;
+  digitalWrite(4, LOW);
+    
   Serial.println(urlFinal);
   HTTPClient http;
   http.begin(urlFinal.c_str());
