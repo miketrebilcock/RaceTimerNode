@@ -3,15 +3,15 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <NewPing.h>
 
 struct Button
 {
-  const uint8_t PIN;
   bool detected;
   unsigned long detectedAt;
 };
 
-Button laserDetector = {16, false, 0};
+Button laserDetector = {16, false};
 
 int secondNow = 0;
 int hourNow = 0;
@@ -22,7 +22,7 @@ int yearNow = 0;
 
 unsigned long lastMillis = 0;
 
-static const int RXPin = 13, TXPin = 12, StatusLEDRedPin = 15, StatusLEDGreenPin = 13, StatusLEDBluePin = 2;
+static const int RXPin = 13, TXPin = 12
 static const uint32_t GPSBaud = 9600;
 
 // The TinyGPSPlus object
@@ -40,13 +40,11 @@ const char *sheet = "StartData";
 const char *GScriptId = "AKfycbwTftthY7XpBuDkBwgv_A49HahBlJgsGIk_GGKaug3dnWjZYpXrOk0FSieGG1lo8865"; // change Gscript ID
 String url = String("https://script.google.com/macros/s/") + GScriptId + "/exec?";
 
-void ARDUINO_ISR_ATTR isr()
-{
-  if(!laserDetector.detected) {
-    laserDetector.detected = true;
-    laserDetector.detectedAt = millis();
-  }
-}
+//void ARDUINO_ISR_ATTR isr()
+//{
+//  laserDetector.detected = true;
+//  laserDetector.detectedAt = millis();
+//}
 
 #define WIFI_TIMEOUT_MS 20000      // 20 second WiFi connection timeout
 #define WIFI_RECOVER_TIME_MS 30000 // Wait 30 seconds after a failed connection attempt
@@ -87,22 +85,48 @@ void keepWiFiAlive(void *parameter)
     if (WiFi.status() != WL_CONNECTED)
     {
       Serial.println("[WIFI] FAILED");
-      LEDRed();
       vTaskDelay(WIFI_RECOVER_TIME_MS / portTICK_PERIOD_MS);
       continue;
     }
 
     Serial.println("[WIFI] Connected: " + WiFi.localIP());
-    LEDGreen();
   }
 }
 
+// Define Trig and Echo pin:
+#define trigPin 15
+#define echoPin 13
+
+// Define maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500 cm:
+#define MAX_DISTANCE 400
+#define DETECT_TIME_MS 50
+
+// NewPing setup of pins and maximum distance.
+NewPing sonar = NewPing(trigPin, echoPin, MAX_DISTANCE);
+
+unsigned int maxDistance = 0;
+
+void checkForRider()
+{
+  for (;;)
+  {
+    vTaskDelay(DETECT_TIME_MS / portTICK_PERIOD_MS);
+    unsigned int distance = sonar.ping_cm()
+    if (distance > maxDistance)
+    {
+      maxDistance = distance;
+      continue;
+    }
+    if (distance / maxDistance > 0.4) {
+      laserDetector.detected = true;
+      laserDetector.detectedAt = millis();
+    }
+  }
+}
+
+
 void setup()
 {
-  pinMode(laserDetector.PIN, INPUT);
-  pinMode(StatusLEDRedPin, OUTPUT);
-  pinMode(StatusLEDGreenPin, OUTPUT);
-  pinMode(StatusLEDBluePin, OUTPUT);
   pinMode(4, OUTPUT);
 
   Serial.begin(115200);
@@ -110,6 +134,15 @@ void setup()
   xTaskCreatePinnedToCore(
       keepWiFiAlive,
       "keepWiFiAlive", // Task name
+      5000,            // Stack size (bytes)
+      NULL,            // Parameter
+      5,               // Task priority
+      NULL,            // Task handle
+      ARDUINO_RUNNING_CORE);
+
+  xTaskCreatePinnedToCore(
+      checkForRider,
+      "checkForRider", // Task name
       5000,            // Stack size (bytes)
       NULL,            // Parameter
       1,               // Task priority
@@ -122,9 +155,6 @@ void setup()
 
   while (!gps.date.isValid() or !gps.time.isValid())
   {
-    LEDBlue();
-    smartDelay(500);
-    LEDOff();
     smartDelay(500);
     Serial.print(".");
     if (millis() > 5000 && gps.charsProcessed() < 10)
@@ -135,19 +165,23 @@ void setup()
     }
   }
 
-  attachInterrupt(laserDetector.PIN, isr, RISING);
+//  attachInterrupt(laserDetector.PIN, isr, RISING);
   updateTime();
 }
 
 void loop()
 {
-  LEDGreen();
+  
   updateTime();
   if (laserDetector.detected)
   {
     digitalWrite(4, HIGH);
 
     sendDetection();
+    smartDelay(500);
+    laserDetector.detected = false;
+    laserDetector.detectedAt = 0;
+    digitalWrite(4, LOW);
   }
   smartDelay(1);
 }
@@ -181,11 +215,6 @@ void sendDetection()
   urlFinal += "&minutes=" + String(minuteNow);
   urlFinal += "&seconds=" + String(secondNow);
   urlFinal += "&ms=" + String(laserDetector.detectedAt - lastMillis);
-  
-  laserDetector.detected = false;
-  laserDetector.detectedAt = 0;
-  digitalWrite(4, LOW);
-    
   Serial.println(urlFinal);
   HTTPClient http;
   http.begin(urlFinal.c_str());
@@ -230,44 +259,6 @@ void blockingFault()
   Serial.println("Fault");
   while (1)
   {
-    LEDRed();
-    delay(500);
-    LEDOff();
-    delay(500);
+    ;
   }
-}
-
-void LEDBlue()
-{
-  digitalWrite(StatusLEDRedPin, LOW);
-  digitalWrite(StatusLEDGreenPin, LOW);
-  digitalWrite(StatusLEDBluePin, HIGH);
-}
-
-void LEDRed()
-{
-  digitalWrite(StatusLEDRedPin, HIGH);
-  digitalWrite(StatusLEDGreenPin, LOW);
-  digitalWrite(StatusLEDBluePin, LOW);
-}
-
-void LEDGreen()
-{
-  digitalWrite(StatusLEDRedPin, LOW);
-  digitalWrite(StatusLEDGreenPin, HIGH);
-  digitalWrite(StatusLEDBluePin, LOW);
-}
-
-void LEDWhite()
-{
-  digitalWrite(StatusLEDRedPin, HIGH);
-  digitalWrite(StatusLEDGreenPin, HIGH);
-  digitalWrite(StatusLEDBluePin, HIGH);
-}
-
-void LEDOff()
-{
-  digitalWrite(StatusLEDRedPin, LOW);
-  digitalWrite(StatusLEDGreenPin, LOW);
-  digitalWrite(StatusLEDBluePin, LOW);
 }
